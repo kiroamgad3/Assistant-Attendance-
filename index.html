@@ -145,15 +145,20 @@ const LEAD=30,AL='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 function genCode(){const r=new Uint32Array(8);crypto.getRandomValues(r);let x='';r.forEach((v,i)=>{x+=AL[v%AL.length];if(i===3)x+='-'});return x}
 const fmtT=ms=>new Date(ms).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 const myOf=(aid,sid)=>{const a=assistants.find(x=>x.id===aid);if(!a||!a.code)return{};const c=myData.find(x=>x.id===a.code);return(c&&c[sid])||{}};
-const stat=(s,aid)=>{const m=myOf(aid,s.id);let o='';if(m.confirm)o+=' ✓';if(m.qr){const sb=subs.find(x=>x.id===m.qr);o+=' · 👥 '+(sb?Object.keys(sb).length-1:0)}if(m.arrive){const late=m.deadline&&m.arrive.t>m.deadline;o+=' · 🕒 '+fmtT(m.arrive.t)+(late?' ('+t('late')+' '+Math.round((m.arrive.t-m.deadline)/6e4)+'m)':'')+(m.arrive.lat?' <a href="https://www.google.com/maps?q='+m.arrive.lat+','+m.arrive.lng+'" target="_blank" rel="noopener">📍</a>':' (no location)')}return o};
-async function exportStudents(){
- const rows=[['Date','Time','Centre','Class','Assistant','Student code','Submitted at']];
- sessions.filter(s=>(s.date||'').startsWith(month)).sort((a,b)=>((a.date||'')+(a.time||'')).localeCompare((b.date||'')+(b.time||''))).forEach(s=>{(s.ids||[]).forEach(aid=>{const m=myOf(aid,s.id);if(!m.qr)return;const sb=subs.find(x=>x.id===m.qr);if(!sb)return;const a=assistants.find(x=>x.id===aid);Object.keys(sb).filter(k=>k!=='id').map(k=>sb[k]).sort((p,q)=>p.t-q.t).forEach(v=>rows.push([s.date,s.time||'',s.centre,s.label||'',a?a.name:'',String(v.c),new Date(v.t).toLocaleString()]))})});
+const stat=(s,aid)=>{const m=myOf(aid,s.id);let o='';if(m.confirm)o+=' ✓';if(m.qr){const sb=subs.find(x=>x.id===m.qr);o+=' · <button class="sm" data-xs="'+s.id+'|'+aid+'" style="padding:2px 8px">👥 '+(sb?Object.keys(sb).length-1:0)+'</button>'}if(m.arrive){const late=m.deadline&&m.arrive.t>m.deadline;o+=' · 🕒 '+fmtT(m.arrive.t)+(late?' ('+t('late')+' '+Math.round((m.arrive.t-m.deadline)/6e4)+'m)':'')+(m.arrive.lat?' <a href="https://www.google.com/maps?q='+m.arrive.lat+','+m.arrive.lng+'" target="_blank" rel="noopener">📍</a>':' (no location)')}return o};
+const safeName=x=>String(x||'').replace(/[\\\/:*?"<>|]+/g,'-').replace(/\s+/g,' ').trim();
+function studentRows(list,only){const rows=[['Date','Time','Centre','Class','Assistant','Student code','Submitted at']];
+ list.forEach(s=>{(s.ids||[]).forEach(aid=>{if(only&&only!==aid)return;const m=myOf(aid,s.id);if(!m.qr)return;const sb=subs.find(x=>x.id===m.qr);if(!sb)return;const a=assistants.find(x=>x.id===aid);
+  Object.keys(sb).filter(k=>k!=='id').map(k=>sb[k]).sort((p,q)=>p.t-q.t).forEach(v=>rows.push([s.date,s.time||'',s.centre,s.label||'',a?a.name:'',String(v.c),new Date(v.t).toLocaleString()]))})});return rows}
+async function saveRows(rows,name){
  if(rows.length<2)return toast(t('noSub'));
  try{const d=await claude.use('downloads');
-  if(window.XLSX){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Students');await d.save({filename:'students-'+month+'.xlsx',data:XLSX.write(wb,{bookType:'xlsx',type:'array'})})}
-  else{const q=v=>'"'+String(v).replace(/"/g,'""')+'"';await d.save({filename:'students-'+month+'.csv',data:'\ufeff'+rows.map(r=>r.map(q).join(',')).join('\n')})}
+  if(window.XLSX){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Students');await d.save({filename:name+'.xlsx',data:XLSX.write(wb,{bookType:'xlsx',type:'array'})})}
+  else{const q=v=>'"'+String(v).replace(/"/g,'""')+'"';await d.save({filename:name+'.csv',data:'\ufeff'+rows.map(r=>r.map(q).join(',')).join('\n')})}
  }catch(e){fail(e)}}
+function exportStudents(){const list=sessions.filter(s=>(s.date||'').startsWith(month)).sort((a,b)=>((a.date||'')+(a.time||'')).localeCompare((b.date||'')+(b.time||'')));saveRows(studentRows(list),'students-'+month)}
+function exportClass(sid,aid){const s=sessions.find(x=>x.id===sid);if(s)saveRows(studentRows([s],aid),safeName(s.centre)+' - '+s.date)}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-xs]');if(b){e.preventDefault();const[sid,aid]=b.dataset.xs.split('|');exportClass(sid,aid)}});
 function syncMirror(){
   if(!db||!window.__sync||!loaded.assistants||!loaded.sessions||!loaded.my)return;
   const want={},cur={},keep2={};myData.forEach(c=>cur[c.id]=c);
